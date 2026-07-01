@@ -1,0 +1,35 @@
+## AWS CodeDeploy Application Specification
+## Compatible with Amazon Linux 2 / Ubuntu 22.04 on EC2 or on-premises instances.
+## Reference: https://docs.aws.amazon.com/codedeploy/latest/userguide/reference-appspec-file.html
+
+version: 0.0
+os: linux
+
+files:
+  - source: /
+    destination: /opt/entrapeer
+    overwrite: true
+
+permissions:
+  - object: /opt/entrapeer/scripts
+    owner: root
+    group: root
+    mode: 755
+    type:
+      - file
+
+hooks:
+  BeforeInstall:
+    - location: scripts/before_install.sh
+      timeout: 120
+      runas: root
+
+  ApplicationStop:
+    - location: scripts/stop_application.sh
+      timeout: 60
+      runas: root
+
+  ApplicationStart:
+    - location: scripts/start_application.sh
+      timeout: 180
+      runas: root

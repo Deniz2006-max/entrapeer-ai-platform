@@ -1,0 +1,73 @@
+services:
+  web:
+    platform: linux/amd64
+    build: .
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      MONGO_DETAILS: mongodb://mongodb:27017
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      - redis
+      - mongodb
+    restart: unless-stopped
+
+  # ── Celery Worker ─────────────────────────────────────────────────────────
+  # Runs the same Docker image as `web` but starts the Celery worker instead
+  # of Uvicorn.  Shares the same codebase, .env, and network so it can reach
+  # Redis (broker + result backend + LangGraph checkpointer) and MongoDB.
+  #
+  # Concurrency is set to 4 (CPU-bound LLM calls benefit from prefork).
+  # Raise/lower CELERY_CONCURRENCY to tune parallelism.
+  worker:
+    platform: linux/amd64
+    build: .
+    command: >
+      celery -A app.worker.celery_app.celery_app worker
+      --loglevel=info
+      --concurrency=4
+      --queues=celery
+      --hostname=worker@%h
+    env_file:
+      - .env
+    environment:
+      MONGO_DETAILS: mongodb://mongodb:27017
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      - redis
+      - mongodb
+    restart: unless-stopped
+
+  redis:
+    image: redis:8-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+
+  mongodb:
+    image: mongo:8
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      BACKEND_URL: http://web:8000
+    depends_on:
+      - web
+    restart: unless-stopped
+
+volumes:
+  redis_data:
+  mongodb_data:
