@@ -7,6 +7,11 @@ FROM node:22-alpine AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
+# NEXT_PUBLIC_* vars must be available at build time so Next.js can inline them
+# into the client bundle.  The default points to the host-exposed backend port
+# (port 8000 is mapped to the host in docker-compose.yml).
+ARG NEXT_PUBLIC_API_URL=http://localhost:8000
+ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
 ENV NEXT_TELEMETRY_DISABLED=1
 RUN npm run build
 

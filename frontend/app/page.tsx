@@ -403,9 +403,11 @@ export default function Home() {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  // Requests go to Next.js's own origin (/api/v1/…) which proxies to the
-  // backend via the rewrites rule in next.config.ts. No CORS issue.
-  const apiBase = "";
+  // NEXT_PUBLIC_API_URL is baked at build time (set via Dockerfile ARG).
+  // Points to http://localhost:8000 so the browser can reach the backend
+  // directly via the host-exposed port — no proxy hop needed.
+  // Falls back to "" (relative) which uses the Next.js server-side rewrite proxy.
+  const apiBase = process.env.NEXT_PUBLIC_API_URL ?? "";
 
   async function sendMessage() {
     const text = input.trim();
@@ -436,10 +438,14 @@ export default function Home() {
             thread_id: threadId ?? undefined,
           }),
         });
+        if (!res.ok) {
+          const errBody = await res.text();
+          throw new Error(`Sunucu hatası ${res.status}: ${errBody.slice(0, 200)}`);
+        }
         data = await res.json();
         setThreadId(data.thread_id);
         setActiveThread(data.thread_id);
-        // "awaiting_response" means discovery asked questions, user must answer
+        // Stay in interview mode as long as backend says so
         if (data.current_step === "awaiting_response" || data.current_step === "discovery") {
           setAwaitingResponse(true);
         } else {
@@ -456,21 +462,29 @@ export default function Home() {
             user_id: "deniz-test-user",
           }),
         });
+        if (!res.ok) {
+          const errBody = await res.text();
+          throw new Error(`Sunucu hatası ${res.status}: ${errBody.slice(0, 200)}`);
+        }
         data = await res.json();
-        setAwaitingResponse(false);
+        // FIX: keep interview mode active if backend still expects answers
+        if (data.current_step === "awaiting_response" || data.current_step === "discovery") {
+          setAwaitingResponse(true);
+        } else {
+          setAwaitingResponse(false);
+        }
       }
 
-      // Show only new assistant messages
-      const newAssistantMsgs = data.messages.filter((m) => m.role === "assistant");
-      const lastAssistant = newAssistantMsgs[newAssistantMsgs.length - 1];
+      // Show only the latest assistant message to avoid duplicates
+      const allAssistantMsgs = (data.messages ?? []).filter((m) => m.role === "assistant");
+      const lastAssistant = allAssistantMsgs[allAssistantMsgs.length - 1];
       if (lastAssistant) {
         setMessages((prev) => [...prev, lastAssistant]);
       }
 
-      // Update problem tree if available
+      // Update problem tree if analysis is complete
       if (data.structured_problem?.main_problem) {
         setProblemTree(data.structured_problem);
-        // Push to history
         setHistory((prev) => {
           const exists = prev.find((h) => h.thread_id === data.thread_id);
           if (exists) return prev;
@@ -484,12 +498,14 @@ export default function Home() {
           ];
         });
       }
-    } catch {
+    } catch (err: unknown) {
+      const message =
+        err instanceof Error ? err.message : "Bilinmeyen hata oluştu.";
       setMessages((prev) => [
         ...prev,
         {
           role: "assistant",
-          content: "Bağlantı hatası oluştu. Backend servisinin çalıştığından emin olunuz.",
+          content: `⚠️ Bağlantı hatası: ${message}\n\nBackend servisinin çalıştığından ve API URL'nin doğru olduğundan emin olunuz.`,
         },
       ]);
     } finally {

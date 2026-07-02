@@ -60,9 +60,15 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+      args:
+        # Baked into the Next.js client bundle at build time.
+        # Points to the host-exposed backend so the browser can reach it directly.
+        # For server-side Next.js proxy (rewrites), BACKEND_URL is used at runtime.
+        NEXT_PUBLIC_API_URL: http://localhost:8000
     ports:
       - "3000:3000"
     environment:
+      # Used by next.config.ts rewrites() at runtime (server-side proxy fallback).
       BACKEND_URL: http://web:8000
     depends_on:
       - web
